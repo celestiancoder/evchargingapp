@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { chargingAlgorithm, BookingResult } from '@/services/algorithm.service';
 import { bookingService, BayStatus } from '@/services/booking.service';
+import { getStationById, getSlotDisplayName } from '@/config/stations';
 
 const convertToIsoDate = (timeStr: string) => {
   const [hours, minutes] = timeStr.split(':').map(Number);
@@ -23,6 +24,7 @@ export default function BookingResultsScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const serviceType = params.serviceType as string;
+  const stationId = params.stationId as string;
   const arrivalTime = params.arrivalTime as string;
   const departureTime = params.departureTime as string;
   const currentSoc = params.currentSoc as string;
@@ -49,6 +51,15 @@ export default function BookingResultsScreen() {
         const endIso = convertToIsoDate(calcResult.endTime);
         
         const bayStatuses = await bookingService.getAllBayStatuses(startIso, endIso);
+        if (stationId) {
+          const station = getStationById(stationId);
+          if (station) {
+            const stationSlotNames = station.slots.map(s => s.dbName);
+            const filteredBays = bayStatuses.filter(bay => stationSlotNames.includes(bay.name));
+            setBays(filteredBays);
+            return;
+          }
+        }
         setBays(bayStatuses);
       } catch (err) {
         Alert.alert('Error', 'Could not load real-time bay availability.');
@@ -58,7 +69,7 @@ export default function BookingResultsScreen() {
     };
 
     fetchBays();
-  }, [serviceType, arrivalTime, departureTime, currentSoc, targetSoc]);
+  }, [serviceType, stationId, arrivalTime, departureTime, currentSoc, targetSoc]);
 
 const handleBaySelect = (bay: BayStatus) => {
   setSelectedSlotId(bay.id);
@@ -202,7 +213,7 @@ const handleBaySelect = (bay: BayStatus) => {
                         !bay.isAvailable && styles.bayTextOccupied,
                         isSelected && styles.bayTextSelected
                       ]}>
-                        {bay.name}
+                        {getSlotDisplayName(bay.name)}
                       </Text>
                       <Text style={{ fontSize: 9, color: bay.isAvailable ? '#6B7280' : '#EF4444' }}>
                         {bay.isAvailable ? (isSelected ? 'Selected' : 'Open') : 'Booked'}

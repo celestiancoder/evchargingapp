@@ -16,6 +16,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { vehicleService } from '@/services/vehicle.service';
 import { Vehicle } from '@/services/vehicle.service';
+import { getStationById } from '@/config/stations';
 
 const isValidTimeString = (value: string): boolean => {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value.trim());
@@ -32,6 +33,8 @@ export default function BookingFormScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const serviceType = params.serviceType;
+  const stationId = params.stationId as string;
+  const station = getStationById(stationId);
   const isCharging = serviceType === 'charging';
 
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -156,6 +159,7 @@ export default function BookingFormScreen() {
       pathname: '/booking-results',
       params: {
         serviceType,
+        stationId,
         vehicleId: selectedVehicleId,
         batteryCapacityMah: selectedVehicle?.battery_capacity_mah || 2200,
         arrivalTime,
@@ -172,11 +176,13 @@ export default function BookingFormScreen() {
         <TouchableOpacity onPress={() => router.back()} className="mr-4 p-1">
           <Ionicons name="arrow-back" size={24} color="#374151" />
         </TouchableOpacity>
-        <View>
-          <Text className="text-xl font-bold text-gray-900">
-            {isCharging ? 'Charge & Park' : 'Parking Only'}
+        <View className="flex-1">
+          <Text className="text-xl font-bold text-gray-900" numberOfLines={1}>
+            {station ? `${isCharging ? 'Charging' : 'Parking'} at ${station.name}` : (isCharging ? 'Charge & Park' : 'Parking Only')}
           </Text>
-          <Text className="text-xs text-gray-400 mt-0.5">Fill in your booking details</Text>
+          <Text className="text-xs text-gray-400 mt-0.5" numberOfLines={1}>
+            {station ? station.address : 'Fill in your booking details'}
+          </Text>
         </View>
       </View>
 
