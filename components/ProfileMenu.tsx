@@ -30,6 +30,11 @@ export default function ProfileMenu() {
     router.push('/(root)/history');
   };
 
+  const handleVehicles = () => {
+    setOpen(false);
+    router.push('/(root)/vehicles' as any);
+  };
+
   return (
     <View>
       <TouchableOpacity onPress={() => setOpen(true)}>
@@ -57,6 +62,14 @@ export default function ProfileMenu() {
             >
               <Ionicons name="time-outline" size={18} color="#374151" />
               <Text className="ml-3 text-gray-800 font-medium">Booking History</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleVehicles}
+              className="flex-row items-center px-4 py-3"
+            >
+              <Ionicons name="car-outline" size={18} color="#374151" />
+              <Text className="ml-3 text-gray-800 font-medium">My Vehicles</Text>
             </TouchableOpacity>
 
             <View className="h-px bg-gray-100 mx-2 my-1" />
