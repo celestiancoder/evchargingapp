@@ -49,6 +49,7 @@ export default function LiveSessionScreen() {
   const [loading, setLoading] = useState<boolean>(true);
   const [receipt, setReceipt] = useState<CancellationReceipt | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState<boolean>(false);
+  const [v2gData, setV2gData] = useState<any>(null);
 
   const pulseAnim = useRef(new Animated.Value(0.4)).current;
 
@@ -99,6 +100,11 @@ export default function LiveSessionScreen() {
     };
 
     fetchBookingDetails();
+
+    const stored = localStorage.getItem(`v2g_booking_${bookingId}`);
+    if (stored) {
+      setV2gData(JSON.parse(stored));
+    }
 
     const subscription = supabase
       .channel(`live-session-${bookingId}`)
@@ -278,8 +284,43 @@ export default function LiveSessionScreen() {
 
             <View style={styles.infoRow}>
               <Text style={styles.label}>Estimated Price</Text>
-              <Text style={styles.priceValue}>${booking.total_cost.toFixed(2)}</Text>
+              <Text style={styles.priceValue}>₹{booking.total_cost.toFixed(2)}</Text>
             </View>
+
+            {v2gData && v2gData.v2gEnabled && (
+              <>
+                <View style={styles.divider} />
+                <View style={styles.v2gHeaderRow}>
+                  <Ionicons name="flash-outline" size={16} color="#F97316" />
+                  <Text style={styles.v2gSectionTitle}>Vehicle-to-Grid (V2G)</Text>
+                </View>
+                
+                <View style={styles.infoRow}>
+                  <Text style={styles.label}>Status</Text>
+                  <Text style={styles.v2gValueEnabled}>Enabled</Text>
+                </View>
+                
+                <View style={styles.infoRow}>
+                  <Text style={styles.label}>Estimated Energy Sold</Text>
+                  <Text style={styles.value}>{v2gData.energySoldKwh} kWh</Text>
+                </View>
+                
+                <View style={styles.infoRow}>
+                  <Text style={styles.label}>Average Selling Price</Text>
+                  <Text style={styles.value}>₹{v2gData.avgSellingPrice}/kWh</Text>
+                </View>
+                
+                <View style={styles.infoRow}>
+                  <Text style={styles.label}>Estimated Revenue</Text>
+                  <Text style={styles.v2gRevenueValue}>₹{v2gData.v2gRevenue}</Text>
+                </View>
+                
+                <View style={styles.infoRow}>
+                  <Text style={styles.label}>Battery Reserve</Text>
+                  <Text style={styles.value}>{v2gData.minBatteryReserve}%</Text>
+                </View>
+              </>
+            )}
           </View>
         </View>
 
@@ -321,26 +362,26 @@ export default function LiveSessionScreen() {
 
               <View style={styles.receiptRow}>
                 <Text style={styles.receiptLabel}>Prorated Charging</Text>
-                <Text style={styles.receiptValue}>${receipt?.chargingCost.toFixed(2)}</Text>
+                <Text style={styles.receiptValue}>₹{receipt?.chargingCost.toFixed(2)}</Text>
               </View>
               <View style={styles.receiptDivider} />
 
               <View style={styles.receiptRow}>
                 <Text style={styles.receiptLabel}>Prorated Parking</Text>
-                <Text style={styles.receiptValue}>${receipt?.parkingCost.toFixed(2)}</Text>
+                <Text style={styles.receiptValue}>₹{receipt?.parkingCost.toFixed(2)}</Text>
               </View>
               <View style={styles.receiptDivider} />
 
               <View style={styles.receiptRowTotal}>
                 <Text style={styles.receiptTotalLabel}>Final Amount Billed</Text>
-                <Text style={styles.receiptTotalValue}>${receipt?.finalTotalCost.toFixed(2)}</Text>
+                <Text style={styles.receiptTotalValue}>₹{receipt?.finalTotalCost.toFixed(2)}</Text>
               </View>
 
               {receipt && receipt.refundAmount > 0 && (
                 <View style={styles.refundBadge}>
                   <Ionicons name="checkmark-circle" size={18} color="#10B981" />
                   <Text style={styles.refundText}>
-                    Refund Issued: ${receipt.refundAmount.toFixed(2)}
+                    Refund Issued: ₹{receipt.refundAmount.toFixed(2)}
                   </Text>
                 </View>
               )}
@@ -386,6 +427,10 @@ const styles = StyleSheet.create({
   value: { fontSize: 13, fontWeight: '500', color: '#000000' },
   valueBold: { fontSize: 13, fontWeight: '700', color: '#000000' },
   priceValue: { fontSize: 15, fontWeight: '800', color: '#000000' },
+  v2gHeaderRow: { flexDirection: 'row', alignItems: 'center', marginTop: 14, marginBottom: 8, gap: 6 },
+  v2gSectionTitle: { fontSize: 13, fontWeight: '700', color: '#F97316', textTransform: 'uppercase', letterSpacing: 0.5 },
+  v2gValueEnabled: { fontSize: 13, fontWeight: '700', color: '#F97316' },
+  v2gRevenueValue: { fontSize: 13, fontWeight: '800', color: '#F97316' },
   
   buttonGroup: { gap: 8, marginTop: 10, paddingBottom: 10 },
   actionButton: { backgroundColor: '#000000', borderRadius: 14, paddingVertical: 13, alignItems: 'center' },

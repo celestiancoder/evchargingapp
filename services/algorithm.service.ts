@@ -12,6 +12,16 @@ export interface BookingResult {
   isPartial?: boolean;
   chargingMinutesNeeded?: number;
   serviceType: 'charging' | 'parking';
+  v2gData?: {
+    v2gEnabled: boolean;
+    minBatteryReserve: number;
+    energySoldKwh: number;
+    avgSellingPrice: number;
+    v2gRevenue: number;
+    moneySaved: number;
+    totalBenefit: number;
+    immediateChargingCost: number;
+  };
 }
 
 export const chargingAlgorithm = {
@@ -192,5 +202,94 @@ export const chargingAlgorithm = {
     finalTotalCost,
     refundAmount,
   };
-}
+},
+
+  calculateV2G(
+    arrivalTime: string,
+    departureTime: string,
+    achievedSoc: number,
+    batteryCapacityMah: number,
+    minBatteryReserve: number,
+    v2gEnabled: boolean,
+    chargingCost: number,
+    chargingMinutesNeeded: number
+  ) {
+    const arrivalMin = this.timeToMinutes(arrivalTime);
+    const departureMin = this.timeToMinutes(departureTime);
+
+    // Calculate immediate charging cost
+    const chargingMinutePrices = this.getMinuteByMinutePrices(DAILY_PRICING_GRID);
+    let immediateChargingCost = 0;
+    for (let i = arrivalMin; i < arrivalMin + chargingMinutesNeeded; i++) {
+      immediateChargingCost += chargingMinutePrices[i % 1440];
+    }
+    immediateChargingCost = Number(immediateChargingCost.toFixed(2));
+
+    const moneySaved = Math.max(0, Number((immediateChargingCost - chargingCost).toFixed(2)));
+
+    if (!v2gEnabled) {
+      return {
+        v2gEnabled: false,
+        minBatteryReserve,
+        energySoldKwh: 0,
+        avgSellingPrice: 0,
+        v2gRevenue: 0,
+        moneySaved,
+        totalBenefit: moneySaved,
+        immediateChargingCost
+      };
+    }
+
+    const batteryCapacityKwh = batteryCapacityMah / 100;
+    const surplusSoc = Math.max(0, achievedSoc - minBatteryReserve);
+    const surplusKwh = (surplusSoc / 100) * batteryCapacityKwh;
+
+    // Identify all overlapping 30-min intervals during parking stay
+    const overlappingIntervals: { index: number; price: number }[] = [];
+    for (let j = 0; j < 48; j++) {
+      const start = j * 30;
+      const end = (j + 1) * 30;
+      if (Math.max(arrivalMin, start) < Math.min(departureMin, end)) {
+        overlappingIntervals.push({ index: j, price: DAILY_PRICING_GRID[j] });
+      }
+    }
+
+    // Sort intervals by price in descending order to simulate selling at peak prices
+    const sortedIntervals = overlappingIntervals.sort((a, b) => b.price - a.price);
+
+    let remainingSurplus = surplusKwh;
+    let totalRevenue = 0;
+    let intervalsUsed = 0;
+    let sumPrices = 0;
+
+    for (const interval of sortedIntervals) {
+      if (remainingSurplus <= 0) break;
+      
+      const dischargeCapacity = 3.7; // max discharge in kWh per 30 mins
+      const soldInInterval = Math.min(remainingSurplus, dischargeCapacity);
+      
+      const pricePerKwh = interval.price * 5.12; // scales 2.5 to 12.8
+      totalRevenue += soldInInterval * pricePerKwh;
+      remainingSurplus -= soldInInterval;
+      
+      sumPrices += pricePerKwh;
+      intervalsUsed++;
+    }
+
+    const energySoldKwh = Number((surplusKwh - remainingSurplus).toFixed(2));
+    const avgSellingPrice = intervalsUsed > 0 ? Number((sumPrices / intervalsUsed).toFixed(2)) : 12.8;
+    const v2gRevenue = Number(totalRevenue.toFixed(2));
+    const totalBenefit = Number((moneySaved + v2gRevenue).toFixed(2));
+
+    return {
+      v2gEnabled: true,
+      minBatteryReserve,
+      energySoldKwh,
+      avgSellingPrice,
+      v2gRevenue,
+      moneySaved,
+      totalBenefit,
+      immediateChargingCost
+    };
+  }
 };
