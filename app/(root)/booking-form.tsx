@@ -15,14 +15,19 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { vehicleService } from '@/services/vehicle.service';
-import { Vehicle } from '@/services/vehicle.service';
+import { vehicleService, Vehicle } from '@/services/vehicle.service';
 import { getStationById } from '@/config/stations';
 
 const isValidTimeString = (value: string): boolean => {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value.trim());
   return !!match;
 };
+
+const SLIDER_MIN = 20;
+const SLIDER_MAX = 80;
+const SLIDER_RANGE = SLIDER_MAX - SLIDER_MIN;
+
+const clampValue = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 
 const EV_PRESETS = [
   { name: 'Tesla Model Y', capacityMah: 5000 },
@@ -57,24 +62,32 @@ export default function BookingFormScreen() {
   const [v2gEnabled, setV2gEnabled] = useState(false);
   const [minBatteryReserve, setMinBatteryReserve] = useState(40);
   const [sliderWidth, setSliderWidth] = useState(1);
+  const reservePercent = clampValue(((minBatteryReserve - SLIDER_MIN) / SLIDER_RANGE) * 100, 0, 100);
 
   const handleTouch = (x: number) => {
-    const pct = Math.min(Math.max(0, x / sliderWidth), 1);
-    const val = 20 + pct * 60; // 20% to 80%
-    const rounded = Math.round(val / 5) * 5; // round to nearest 5%
-    setMinBatteryReserve(Math.min(80, Math.max(20, rounded)));
+    if (sliderWidth <= 1) {
+      return;
+    }
+
+    const pct = clampValue(x / sliderWidth, 0, 1);
+    const rawValue = SLIDER_MIN + pct * SLIDER_RANGE;
+    const rounded = Math.round(rawValue / 5) * 5;
+    setMinBatteryReserve(clampValue(rounded, SLIDER_MIN, SLIDER_MAX));
   };
 
   const panResponder = React.useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderGrant: (evt) => {
         handleTouch(evt.nativeEvent.locationX);
       },
       onPanResponderMove: (evt) => {
         handleTouch(evt.nativeEvent.locationX);
       },
+      onPanResponderTerminationRequest: () => false,
     })
   ).current;
 
@@ -341,7 +354,7 @@ export default function BookingFormScreen() {
                 </View>
               </View>
               <Text className="text-xs text-gray-400 mb-8">
-                We'll estimate charging time based on this range
+                We&apos;ll estimate charging time based on this range
               </Text>
 
               {/* Vehicle-to-Grid (V2G) card */}
@@ -382,13 +395,13 @@ export default function BookingFormScreen() {
                       <View className="h-2 bg-gray-100 rounded-full w-full">
                         <View
                           className="h-2 bg-orange-500 rounded-full absolute left-0 top-0"
-                          style={{ width: `${((minBatteryReserve - 20) / 60) * 100}%` }}
+                          style={{ width: `${reservePercent}%` }}
                         />
                       </View>
                       <View
                         className="w-5 h-5 bg-white rounded-full border-2 border-orange-500 absolute shadow-sm"
                         style={{ 
-                          left: `${((minBatteryReserve - 20) / 60) * 100}%`,
+                          left: `${reservePercent}%`,
                           marginLeft: -10,
                           top: 6
                         }}
