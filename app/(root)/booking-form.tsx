@@ -10,7 +10,6 @@ import {
   Modal,
   Alert,
   ActivityIndicator,
-  PanResponder
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -61,35 +60,9 @@ export default function BookingFormScreen() {
 
   const [v2gEnabled, setV2gEnabled] = useState(false);
   const [minBatteryReserve, setMinBatteryReserve] = useState(40);
-  const [sliderWidth, setSliderWidth] = useState(1);
   const reservePercent = clampValue(((minBatteryReserve - SLIDER_MIN) / SLIDER_RANGE) * 100, 0, 100);
 
-  const handleTouch = (x: number) => {
-    if (sliderWidth <= 1) {
-      return;
-    }
 
-    const pct = clampValue(x / sliderWidth, 0, 1);
-    const rawValue = SLIDER_MIN + pct * SLIDER_RANGE;
-    const rounded = Math.round(rawValue / 5) * 5;
-    setMinBatteryReserve(clampValue(rounded, SLIDER_MIN, SLIDER_MAX));
-  };
-
-  const panResponder = React.useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onStartShouldSetPanResponderCapture: () => true,
-      onMoveShouldSetPanResponderCapture: () => true,
-      onPanResponderGrant: (evt) => {
-        handleTouch(evt.nativeEvent.locationX);
-      },
-      onPanResponderMove: (evt) => {
-        handleTouch(evt.nativeEvent.locationX);
-      },
-      onPanResponderTerminationRequest: () => false,
-    })
-  ).current;
 
   React.useEffect(() => {
     fetchUserVehicles();
@@ -386,26 +359,25 @@ export default function BookingFormScreen() {
                       <Text className="text-sm font-extrabold text-orange-600">{minBatteryReserve}%</Text>
                     </View>
 
-                    {/* Interactive Custom Slider */}
-                    <View 
-                      onLayout={(e) => setSliderWidth(e.nativeEvent.layout.width || 1)}
-                      {...panResponder.panHandlers} 
-                      className="h-8 justify-center relative my-2"
-                    >
-                      <View className="h-2 bg-gray-100 rounded-full w-full">
+                    {/* Minimum Battery Reserve input (numeric) */}
+                    <View className="my-2">
+                      <TextInput
+                        className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-lg font-medium text-gray-900 w-28"
+                        value={minBatteryReserve.toString()}
+                        onChangeText={(t) => {
+                          const cleaned = t.replace(/[^0-9]/g, '');
+                          const n = cleaned === '' ? SLIDER_MIN : Number(cleaned);
+                          setMinBatteryReserve(clampValue(Math.round(n), SLIDER_MIN, SLIDER_MAX));
+                        }}
+                        keyboardType="numeric"
+                        maxLength={3}
+                      />
+                      <View className="h-2 bg-gray-100 rounded-full w-full mt-3">
                         <View
-                          className="h-2 bg-orange-500 rounded-full absolute left-0 top-0"
+                          className="h-2 bg-orange-500 rounded-full"
                           style={{ width: `${reservePercent}%` }}
                         />
                       </View>
-                      <View
-                        className="w-5 h-5 bg-white rounded-full border-2 border-orange-500 absolute shadow-sm"
-                        style={{ 
-                          left: `${reservePercent}%`,
-                          marginLeft: -10,
-                          top: 6
-                        }}
-                      />
                     </View>
 
                     <View className="flex-row justify-between px-1">
