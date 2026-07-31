@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { chargingAlgorithm, BookingResult } from '@/services/algorithm.service';
 import { bookingService, BayStatus } from '@/services/booking.service';
+import { getStationById, getSlotDisplayName } from '@/config/stations';
 
 const convertToIsoDate = (timeStr: string) => {
   const [hours, minutes] = timeStr.split(':').map(Number);
@@ -23,6 +24,7 @@ export default function BookingResultsScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const serviceType = params.serviceType as string;
+  const stationId = params.stationId as string;
   const arrivalTime = params.arrivalTime as string;
   const departureTime = params.departureTime as string;
   const currentSoc = params.currentSoc as string;
@@ -30,6 +32,8 @@ export default function BookingResultsScreen() {
   const vehicleId = params.vehicleId as string;
   const batteryCapacity = Number(params.batteryCapacityMah || 2200);
   const selectedBayAmps = Number(params.selectedBayAmps || 2.5);
+  const v2gEnabled = params.v2gEnabled === 'true';
+  const minBatteryReserve = Number(params.minBatteryReserve || 40);
 
   useEffect(() => {
     if (!arrivalTime || !departureTime) return;
@@ -37,6 +41,16 @@ export default function BookingResultsScreen() {
     let calcResult: BookingResult;
     if (serviceType === 'charging') {
       calcResult = chargingAlgorithm.calculateChargeAndPark(arrivalTime, departureTime, Number(currentSoc), Number(targetSoc),selectedBayAmps,batteryCapacity);
+      calcResult.v2gData = chargingAlgorithm.calculateV2G(
+        arrivalTime,
+        departureTime,
+        calcResult.achievedSoc || Number(targetSoc),
+        batteryCapacity,
+        minBatteryReserve,
+        v2gEnabled,
+        calcResult.chargingCost,
+        calcResult.chargingMinutesNeeded || 0
+      );
     } else {
       calcResult = chargingAlgorithm.calculateParkingOnly(arrivalTime, departureTime);
     }
@@ -49,6 +63,15 @@ export default function BookingResultsScreen() {
         const endIso = convertToIsoDate(calcResult.endTime);
         
         const bayStatuses = await bookingService.getAllBayStatuses(startIso, endIso);
+        if (stationId) {
+          const station = getStationById(stationId);
+          if (station) {
+            const stationSlotNames = station.slots.map(s => s.dbName);
+            const filteredBays = bayStatuses.filter(bay => stationSlotNames.includes(bay.name));
+            setBays(filteredBays);
+            return;
+          }
+        }
         setBays(bayStatuses);
       } catch (err) {
         Alert.alert('Error', 'Could not load real-time bay availability.');
@@ -58,7 +81,7 @@ export default function BookingResultsScreen() {
     };
 
     fetchBays();
-  }, [serviceType, arrivalTime, departureTime, currentSoc, targetSoc]);
+  }, [serviceType, stationId, arrivalTime, departureTime, currentSoc, targetSoc]);
 
 const handleBaySelect = (bay: BayStatus) => {
   setSelectedSlotId(bay.id);
@@ -72,6 +95,16 @@ const handleBaySelect = (bay: BayStatus) => {
       Number(targetSoc),
       bay.maxOutputAmps,
       batteryCapacity,
+    );
+    calcResult.v2gData = chargingAlgorithm.calculateV2G(
+      arrivalTime,
+      departureTime,
+      calcResult.achievedSoc || Number(targetSoc),
+      batteryCapacity,
+      minBatteryReserve,
+      v2gEnabled,
+      calcResult.chargingCost,
+      calcResult.chargingMinutesNeeded || 0
     );
   } else {
     calcResult = chargingAlgorithm.calculateParkingOnly(arrivalTime, departureTime);
@@ -105,6 +138,10 @@ const handleBaySelect = (bay: BayStatus) => {
         targetSoc: result.serviceType === 'charging' ? Number(targetSoc) : undefined,
         totalCost: result.totalCost,
       });
+
+      if (createdBooking?.id && serviceType === 'charging' && result.v2gData) {
+        localStorage.setItem(`v2g_booking_${createdBooking.id}`, JSON.stringify(result.v2gData));
+      }
 
       Alert.alert(
         'Success', 
@@ -202,7 +239,7 @@ const handleBaySelect = (bay: BayStatus) => {
                         !bay.isAvailable && styles.bayTextOccupied,
                         isSelected && styles.bayTextSelected
                       ]}>
-                        {bay.name}
+                        {getSlotDisplayName(bay.name)}
                       </Text>
                       <Text style={{ fontSize: 9, color: bay.isAvailable ? '#6B7280' : '#EF4444' }}>
                         {bay.isAvailable ? (isSelected ? 'Selected' : 'Open') : 'Booked'}
@@ -215,13 +252,63 @@ const handleBaySelect = (bay: BayStatus) => {
 
             <View style={styles.divider} />
 
+            {result.serviceType === 'charging' && result.v2gData && (
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryTitle}>Charging Summary</Text>
+                
+                <View style={styles.summaryRow}>
+                  <View style={styles.summaryLabelContainer}>
+                    <View style={[styles.indicatorDot, { backgroundColor: '#2563EB' }]} />
+                    <Text style={styles.summaryLabel}>Charging Cost</Text>
+                  </View>
+                  <Text style={[styles.summaryValue, { color: '#2563EB' }]}>
+                    ₹{result.chargingCost.toFixed(2)}
+                  </Text>
+                </View>
+
+                <View style={styles.summaryRow}>
+                  <View style={styles.summaryLabelContainer}>
+                    <View style={[styles.indicatorDot, { backgroundColor: '#10B981' }]} />
+                    <Text style={styles.summaryLabel}>Money Saved</Text>
+                  </View>
+                  <Text style={[styles.summaryValue, { color: '#10B981' }]}>
+                    ₹{result.v2gData.moneySaved.toFixed(2)}
+                  </Text>
+                </View>
+
+                {result.v2gData.v2gEnabled && (
+                  <View style={styles.summaryRow}>
+                    <View style={styles.summaryLabelContainer}>
+                      <View style={[styles.indicatorDot, { backgroundColor: '#F97316' }]} />
+                      <Text style={styles.summaryLabel}>V2G Revenue</Text>
+                    </View>
+                    <Text style={[styles.summaryValue, { color: '#F97316' }]}>
+                      ₹{result.v2gData.v2gRevenue.toFixed(2)}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.summaryDivider} />
+
+                <View style={styles.summaryRow}>
+                  <View style={styles.summaryLabelContainer}>
+                    <View style={[styles.indicatorDot, { backgroundColor: '#8B5CF6' }]} />
+                    <Text style={styles.totalBenefitLabel}>Total Benefit</Text>
+                  </View>
+                  <Text style={[styles.totalBenefitValue, { color: '#8B5CF6' }]}>
+                    ₹{result.v2gData.totalBenefit.toFixed(2)}
+                  </Text>
+                </View>
+              </View>
+            )}
+
             <View style={styles.receiptContainer}>
               <Text style={styles.receiptTitle}>Fare Breakdown</Text>
               
               {result.serviceType === 'charging' && (
                 <View style={styles.receiptRow}>
                   <Text style={styles.receiptLabel}>Smart Charging ({result.chargingMinutesNeeded} mins)</Text>
-                  <Text style={styles.receiptValue}>${result.chargingCost.toFixed(2)}</Text>
+                  <Text style={styles.receiptValue}>₹{result.chargingCost.toFixed(2)}</Text>
                 </View>
               )}
               
@@ -229,12 +316,12 @@ const handleBaySelect = (bay: BayStatus) => {
                 <Text style={styles.receiptLabel}>
                   {result.serviceType === 'charging' ? 'Idle Parking Fee' : 'Parking Fee'}
                 </Text>
-                <Text style={styles.receiptValue}>${result.parkingCost.toFixed(2)}</Text>
+                <Text style={styles.receiptValue}>₹{result.parkingCost.toFixed(2)}</Text>
               </View>
 
               <View style={styles.receiptTotalRow}>
                 <Text style={styles.costLabel}>Total Estimate</Text>
-                <Text style={styles.costValue}>${result.totalCost.toFixed(2)}</Text>
+                <Text style={styles.costValue}>₹{result.totalCost.toFixed(2)}</Text>
               </View>
             </View>
 
@@ -296,5 +383,58 @@ const styles = StyleSheet.create({
   buttonDisabled: { backgroundColor: '#A1A1AA' },
   buttonText: { color: '#ffffff', fontSize: 16, fontWeight: 'bold' },
   loadingContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 60 },
-  loadingText: { textAlign: 'center', marginTop: 16, color: '#6B7280', fontSize: 16 }
+  loadingText: { textAlign: 'center', marginTop: 16, color: '#6B7280', fontSize: 16 },
+  summaryCard: {
+    backgroundColor: '#FAFAFA',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 16,
+    marginVertical: 12,
+  },
+  summaryTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 12,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 6,
+  },
+  summaryLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  indicatorDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  summaryLabel: {
+    fontSize: 13,
+    color: '#4B5563',
+    fontWeight: '500',
+  },
+  summaryValue: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  summaryDivider: {
+    height: 1,
+    backgroundColor: '#E5E7EB',
+    marginVertical: 10,
+  },
+  totalBenefitLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  totalBenefitValue: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
 });

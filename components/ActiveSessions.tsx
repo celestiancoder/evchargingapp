@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase'; 
+import { getSlotDisplayName } from '@/config/stations';
 
 interface ActiveSessionData {
   id: string;
@@ -104,7 +105,7 @@ export default function ActiveSessions() {
   }
 
   const isCharging = activeSession.is_charging;
-  const slotName = activeSession.slots?.name || 'Charging Bay';
+  const slotName = activeSession.slots?.name ? getSlotDisplayName(activeSession.slots.name) : 'Charging Bay';
   const formattedEndTime = new Date(activeSession.end_time).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',

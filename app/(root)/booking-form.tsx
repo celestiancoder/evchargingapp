@@ -9,13 +9,15 @@ import {
   Platform,
   Modal,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  PanResponder
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { vehicleService } from '@/services/vehicle.service';
 import { Vehicle } from '@/services/vehicle.service';
+import { getStationById } from '@/config/stations';
 
 const isValidTimeString = (value: string): boolean => {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value.trim());
@@ -32,6 +34,8 @@ export default function BookingFormScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const serviceType = params.serviceType;
+  const stationId = params.stationId as string;
+  const station = getStationById(stationId);
   const isCharging = serviceType === 'charging';
 
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -49,6 +53,30 @@ export default function BookingFormScreen() {
   const [newMakeModel, setNewMakeModel] = useState('');
   const [newLicensePlate, setNewLicensePlate] = useState('');
   const [selectedPresetIndex, setSelectedPresetIndex] = useState<number | 'custom'>('custom');
+
+  const [v2gEnabled, setV2gEnabled] = useState(false);
+  const [minBatteryReserve, setMinBatteryReserve] = useState(40);
+  const [sliderWidth, setSliderWidth] = useState(1);
+
+  const handleTouch = (x: number) => {
+    const pct = Math.min(Math.max(0, x / sliderWidth), 1);
+    const val = 20 + pct * 60; // 20% to 80%
+    const rounded = Math.round(val / 5) * 5; // round to nearest 5%
+    setMinBatteryReserve(Math.min(80, Math.max(20, rounded)));
+  };
+
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        handleTouch(evt.nativeEvent.locationX);
+      },
+      onPanResponderMove: (evt) => {
+        handleTouch(evt.nativeEvent.locationX);
+      },
+    })
+  ).current;
 
   React.useEffect(() => {
     fetchUserVehicles();
@@ -156,12 +184,15 @@ export default function BookingFormScreen() {
       pathname: '/booking-results',
       params: {
         serviceType,
+        stationId,
         vehicleId: selectedVehicleId,
         batteryCapacityMah: selectedVehicle?.battery_capacity_mah || 2200,
         arrivalTime,
         departureTime,
         currentSoc,
-        targetSoc
+        targetSoc,
+        v2gEnabled: v2gEnabled ? 'true' : 'false',
+        minBatteryReserve: minBatteryReserve.toString()
       }
     });
   };
@@ -172,11 +203,13 @@ export default function BookingFormScreen() {
         <TouchableOpacity onPress={() => router.back()} className="mr-4 p-1">
           <Ionicons name="arrow-back" size={24} color="#374151" />
         </TouchableOpacity>
-        <View>
-          <Text className="text-xl font-bold text-gray-900">
-            {isCharging ? 'Charge & Park' : 'Parking Only'}
+        <View className="flex-1">
+          <Text className="text-xl font-bold text-gray-900" numberOfLines={1}>
+            {station ? `${isCharging ? 'Charging' : 'Parking'} at ${station.name}` : (isCharging ? 'Charge & Park' : 'Parking Only')}
           </Text>
-          <Text className="text-xs text-gray-400 mt-0.5">Fill in your booking details</Text>
+          <Text className="text-xs text-gray-400 mt-0.5" numberOfLines={1}>
+            {station ? station.address : 'Fill in your booking details'}
+          </Text>
         </View>
       </View>
 
@@ -310,6 +343,71 @@ export default function BookingFormScreen() {
               <Text className="text-xs text-gray-400 mb-8">
                 We'll estimate charging time based on this range
               </Text>
+
+              {/* Vehicle-to-Grid (V2G) card */}
+              <View className="bg-white border border-gray-100 rounded-3xl p-5 mb-8 shadow-sm">
+                <View className="flex-row justify-between items-center">
+                  <View className="flex-1 mr-4">
+                    <Text className="text-base font-extrabold text-gray-900">Vehicle-to-Grid (V2G)</Text>
+                    <Text className="text-xs text-gray-500 mt-1 leading-relaxed">
+                      Enable Vehicle-to-Grid (V2G) mode. If surplus battery energy is available after your charging session, the system estimates how much revenue you could earn by selling electricity back to the grid during high-price periods while maintaining a minimum battery reserve.
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setV2gEnabled(!v2gEnabled)}
+                    activeOpacity={0.8}
+                    className="w-14 h-8 rounded-full p-1"
+                    style={{ backgroundColor: v2gEnabled ? '#F97316' : '#E5E7EB' }}
+                  >
+                    <View
+                      className="w-6 h-6 rounded-full bg-white shadow-sm"
+                      style={{ transform: [{ translateX: v2gEnabled ? 24 : 0 }] }}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {v2gEnabled && (
+                  <View className="mt-4 pt-4 border-t border-gray-100">
+                    <View className="flex-row justify-between items-center mb-1">
+                      <Text className="text-sm font-bold text-gray-800">Minimum Battery Reserve</Text>
+                      <Text className="text-sm font-extrabold text-orange-600">{minBatteryReserve}%</Text>
+                    </View>
+
+                    {/* Interactive Custom Slider */}
+                    <View 
+                      onLayout={(e) => setSliderWidth(e.nativeEvent.layout.width || 1)}
+                      {...panResponder.panHandlers} 
+                      className="h-8 justify-center relative my-2"
+                    >
+                      <View className="h-2 bg-gray-100 rounded-full w-full">
+                        <View
+                          className="h-2 bg-orange-500 rounded-full absolute left-0 top-0"
+                          style={{ width: `${((minBatteryReserve - 20) / 60) * 100}%` }}
+                        />
+                      </View>
+                      <View
+                        className="w-5 h-5 bg-white rounded-full border-2 border-orange-500 absolute shadow-sm"
+                        style={{ 
+                          left: `${((minBatteryReserve - 20) / 60) * 100}%`,
+                          marginLeft: -10,
+                          top: 6
+                        }}
+                      />
+                    </View>
+
+                    <View className="flex-row justify-between px-1">
+                      <Text className="text-[10px] text-gray-400 font-bold">20%</Text>
+                      <Text className="text-[10px] text-gray-400 font-bold">50%</Text>
+                      <Text className="text-[10px] text-gray-400 font-bold">80%</Text>
+                    </View>
+
+                    <Text className="text-xs text-gray-400 mt-3 leading-relaxed">
+                      The battery percentage that will always remain reserved. Only energy above this reserve is considered available for V2G energy trading.
+                    </Text>
+                  </View>
+                )}
+              </View>
+
             </View>
           )}
 

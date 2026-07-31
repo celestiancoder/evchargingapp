@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase'; 
 import { useAuth } from '@/context/auth-context';
+import { getSlotDisplayName } from '@/config/stations';
 
 interface HistoryBooking {
   id: string;
@@ -67,7 +68,7 @@ export default function BookingHistoryScreen() {
 
   const renderItem = ({ item }: { item: HistoryBooking }) => {
     const isCompleted = item.status === 'completed';
-    const slotName = item.slots?.name || 'Charging Bay';
+    const slotName = item.slots?.name ? getSlotDisplayName(item.slots.name) : 'Charging Bay';
     const vehicleText = item.vehicles
       ? `${item.vehicles.make_model} (${item.vehicles.license_plate})`
       : 'Vehicle';
@@ -86,6 +87,27 @@ export default function BookingHistoryScreen() {
       hour: '2-digit',
       minute: '2-digit',
     });
+
+    const localDataStr = localStorage.getItem(`v2g_booking_${item.id}`);
+    let v2gEnabled = false;
+    let moneySaved = 0;
+    let v2gRevenue = 0;
+    let energySold = 0;
+    let totalBenefit = 0;
+
+    if (localDataStr) {
+      const localData = JSON.parse(localDataStr);
+      v2gEnabled = localData.v2gEnabled;
+      moneySaved = localData.moneySaved;
+      v2gRevenue = localData.v2gRevenue;
+      energySold = localData.energySoldKwh;
+      totalBenefit = localData.totalBenefit;
+    } else {
+      if (item.booking_type === 'charging' && isCompleted) {
+        moneySaved = Number((item.total_cost * 0.3).toFixed(2));
+        totalBenefit = moneySaved;
+      }
+    }
 
     return (
       <View className="bg-white border border-gray-200 rounded-2xl p-4 mb-3 shadow-sm">
@@ -121,9 +143,44 @@ export default function BookingHistoryScreen() {
             Type: {item.booking_type}
           </Text>
           <Text className="text-lg font-extrabold text-gray-900">
-            ${Number(item.total_cost || 0).toFixed(2)}
+            ₹{Number(item.total_cost || 0).toFixed(2)}
           </Text>
         </View>
+
+        {item.booking_type === 'charging' && isCompleted && (
+          <View className="mt-3 pt-3 border-t border-gray-100 gap-2">
+            <View className="flex-row justify-between items-center">
+              <Text className="text-xs font-semibold text-gray-500">Charging Cost</Text>
+              <Text className="text-xs font-bold text-blue-600">₹{Number(item.total_cost || 0).toFixed(2)}</Text>
+            </View>
+            <View className="flex-row justify-between items-center">
+              <Text className="text-xs font-semibold text-gray-500">Money Saved</Text>
+              <Text className="text-xs font-bold text-emerald-600">₹{moneySaved.toFixed(2)}</Text>
+            </View>
+            <View className="flex-row justify-between items-center">
+              <Text className="text-xs font-semibold text-gray-500">V2G Enabled</Text>
+              <Text className={`text-xs font-bold ${v2gEnabled ? 'text-orange-600' : 'text-gray-600'}`}>
+                {v2gEnabled ? 'Yes' : 'No'}
+              </Text>
+            </View>
+            {v2gEnabled && (
+              <>
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-xs font-semibold text-gray-500">Energy Sold</Text>
+                  <Text className="text-xs font-semibold text-gray-700">{energySold} kWh</Text>
+                </View>
+                <View className="flex-row justify-between items-center">
+                  <Text className="text-xs font-semibold text-gray-500">Estimated Revenue</Text>
+                  <Text className="text-xs font-bold text-orange-600">₹{v2gRevenue.toFixed(2)}</Text>
+                </View>
+              </>
+            )}
+            <View className="flex-row justify-between items-center bg-purple-50 p-2 rounded-xl mt-1">
+              <Text className="text-xs font-bold text-purple-800">Total Benefit</Text>
+              <Text className="text-sm font-extrabold text-purple-700">₹{totalBenefit.toFixed(2)}</Text>
+            </View>
+          </View>
+        )}
       </View>
     );
   };
