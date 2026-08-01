@@ -16,16 +16,25 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { vehicleService } from '@/services/vehicle.service';
 import { Vehicle } from '@/services/vehicle.service';
+import { getStationById } from '@/config/stations';
 
 const isValidTimeString = (value: string): boolean => {
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value.trim());
   return !!match;
 };
 
+const EV_PRESETS = [
+  { name: 'Tesla Model Y', capacityMah: 5000 },
+  { name: 'Tata Nexon EV', capacityMah: 4000 },
+  { name: 'Nissan Leaf', capacityMah: 3000 },
+];
+
 export default function BookingFormScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const serviceType = params.serviceType;
+  const stationId = params.stationId as string;
+  const station = getStationById(stationId);
   const isCharging = serviceType === 'charging';
 
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -42,6 +51,7 @@ export default function BookingFormScreen() {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [newMakeModel, setNewMakeModel] = useState('');
   const [newLicensePlate, setNewLicensePlate] = useState('');
+  const [selectedPresetIndex, setSelectedPresetIndex] = useState<number | 'custom'>('custom');
 
   React.useEffect(() => {
     fetchUserVehicles();
@@ -65,10 +75,23 @@ export default function BookingFormScreen() {
     }
   };
 
+  const handleSelectPreset = (index: number | 'custom') => {
+    setSelectedPresetIndex(index);
+    if (index === 'custom') {
+      setNewMakeModel('');
+      setNewBatteryCapacity('2200');
+    } else {
+      const preset = EV_PRESETS[index];
+      setNewMakeModel(preset.name);
+      setNewBatteryCapacity(preset.capacityMah.toString());
+    }
+  };
+
   const resetVehicleForm = () => {
     setNewMakeModel('');
     setNewLicensePlate('');
     setNewBatteryCapacity('2200');
+    setSelectedPresetIndex('custom');
   };
 
   const handleSaveVehicle = async () => {
@@ -136,6 +159,7 @@ export default function BookingFormScreen() {
       pathname: '/booking-results',
       params: {
         serviceType,
+        stationId,
         vehicleId: selectedVehicleId,
         batteryCapacityMah: selectedVehicle?.battery_capacity_mah || 2200,
         arrivalTime,
@@ -152,11 +176,13 @@ export default function BookingFormScreen() {
         <TouchableOpacity onPress={() => router.back()} className="mr-4 p-1">
           <Ionicons name="arrow-back" size={24} color="#374151" />
         </TouchableOpacity>
-        <View>
-          <Text className="text-xl font-bold text-gray-900">
-            {isCharging ? 'Charge & Park' : 'Parking Only'}
+        <View className="flex-1">
+          <Text className="text-xl font-bold text-gray-900" numberOfLines={1}>
+            {station ? `${isCharging ? 'Charging' : 'Parking'} at ${station.name}` : (isCharging ? 'Charge & Park' : 'Parking Only')}
           </Text>
-          <Text className="text-xs text-gray-400 mt-0.5">Fill in your booking details</Text>
+          <Text className="text-xs text-gray-400 mt-0.5" numberOfLines={1}>
+            {station ? station.address : 'Fill in your booking details'}
+          </Text>
         </View>
       </View>
 
@@ -321,40 +347,95 @@ export default function BookingFormScreen() {
               </TouchableOpacity>
             </View>
 
-            <View className="mb-4">
-              <Text className="text-sm text-gray-500 mb-2 font-medium">Make & Model</Text>
-              <TextInput
-                className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-4 text-base text-gray-900"
-                placeholder="e.g. Tata Nexon EV"
-                value={newMakeModel}
-                onChangeText={setNewMakeModel}
-                editable={!isSubmittingVehicle}
-              />
-            </View>
+            <ScrollView showsVerticalScrollIndicator={false} className="mb-6">
+              {/* EV Model Presets */}
+              <Text className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2.5">
+                Select EV Preset
+              </Text>
+              <View className="flex-row flex-wrap gap-2.5 mb-5">
+                {EV_PRESETS.map((preset, idx) => {
+                  const isSelected = selectedPresetIndex === idx;
+                  return (
+                    <TouchableOpacity
+                      key={preset.name}
+                      disabled={isSubmittingVehicle}
+                      onPress={() => handleSelectPreset(idx)}
+                      className={`px-4 py-3 rounded-2xl border-2 ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-50'
+                          : 'border-zinc-200 bg-white'
+                      }`}
+                      activeOpacity={0.7}
+                    >
+                      <Text
+                        className={`font-semibold text-xs ${
+                          isSelected ? 'text-blue-600' : 'text-gray-700'
+                        }`}
+                      >
+                        {preset.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <TouchableOpacity
+                  disabled={isSubmittingVehicle}
+                  onPress={() => handleSelectPreset('custom')}
+                  className={`px-4 py-3 rounded-2xl border-2 ${
+                    selectedPresetIndex === 'custom'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-zinc-200 bg-white'
+                  }`}
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    className={`font-semibold text-xs ${
+                      selectedPresetIndex === 'custom' ? 'text-blue-600' : 'text-gray-700'
+                    }`}
+                  >
+                    Custom EV
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
-            <View className="mb-4">
-              <Text className="text-sm text-gray-500 mb-2 font-medium">License Plate Number</Text>
-              <TextInput
-                className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-4 text-base text-gray-900 uppercase"
-                placeholder="e.g. MH-46-XY-1234"
-                value={newLicensePlate}
-                onChangeText={setNewLicensePlate}
-                autoCapitalize="characters"
-                editable={!isSubmittingVehicle}
-              />
-            </View>
+              <View className="mb-4">
+                <Text className="text-sm text-gray-500 mb-2 font-medium">Make & Model</Text>
+                <TextInput
+                  className={`bg-gray-50 border border-gray-200 rounded-xl px-4 py-4 text-base text-gray-900 ${
+                    selectedPresetIndex !== 'custom' ? 'text-gray-500' : ''
+                  }`}
+                  placeholder="e.g. Tata Nexon EV"
+                  value={newMakeModel}
+                  onChangeText={setNewMakeModel}
+                  editable={!isSubmittingVehicle && selectedPresetIndex === 'custom'}
+                />
+              </View>
 
-            <View className="mb-8">
-              <Text className="text-sm text-gray-500 mb-2 font-medium">Battery Capacity (mAh)</Text>
-              <TextInput
-                className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-4 text-base text-gray-900"
-                placeholder="e.g. 2200"
-                value={newBatteryCapacity}
-                onChangeText={setNewBatteryCapacity}
-                keyboardType="numeric"
-                editable={!isSubmittingVehicle}
-              />
-            </View>
+              <View className="mb-4">
+                <Text className="text-sm text-gray-500 mb-2 font-medium">License Plate Number</Text>
+                <TextInput
+                  className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-4 text-base text-gray-900 uppercase"
+                  placeholder="e.g. MH-46-XY-1234"
+                  value={newLicensePlate}
+                  onChangeText={setNewLicensePlate}
+                  autoCapitalize="characters"
+                  editable={!isSubmittingVehicle}
+                />
+              </View>
+
+              <View className="mb-4">
+                <Text className="text-sm text-gray-500 mb-2 font-medium">Battery Capacity (mAh)</Text>
+                <TextInput
+                  className={`bg-gray-50 border border-gray-200 rounded-xl px-4 py-4 text-base text-gray-900 ${
+                    selectedPresetIndex !== 'custom' ? 'text-gray-500' : ''
+                  }`}
+                  placeholder="e.g. 2200"
+                  value={newBatteryCapacity}
+                  onChangeText={setNewBatteryCapacity}
+                  keyboardType="numeric"
+                  editable={!isSubmittingVehicle && selectedPresetIndex === 'custom'}
+                />
+              </View>
+            </ScrollView>
 
             <TouchableOpacity
               onPress={handleSaveVehicle}

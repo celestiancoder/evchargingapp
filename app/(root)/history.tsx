@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase'; 
 import { useAuth } from '@/context/auth-context';
+import { getSlotDisplayName } from '@/config/stations';
 
 interface HistoryBooking {
   id: string;
@@ -67,7 +68,7 @@ export default function BookingHistoryScreen() {
 
   const renderItem = ({ item }: { item: HistoryBooking }) => {
     const isCompleted = item.status === 'completed';
-    const slotName = item.slots?.name || 'Charging Bay';
+    const slotName = item.slots?.name ? getSlotDisplayName(item.slots.name) : 'Charging Bay';
     const vehicleText = item.vehicles
       ? `${item.vehicles.make_model} (${item.vehicles.license_plate})`
       : 'Vehicle';
