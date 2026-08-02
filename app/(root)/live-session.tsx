@@ -30,6 +30,11 @@ interface BookingSession {
   charge_end_time?: string;
   total_cost: number;
   slot_id: string;
+  is_v2g: boolean;
+  discharge_start_time?: string;
+  discharge_end_time?: string;
+  v2g_revenue?: number;
+  v2g_profit?: number;
 }
 
 interface CancellationReceipt {
@@ -202,7 +207,8 @@ export default function LiveSessionScreen() {
   const isCharging = booking.is_charging;
 
   const isSessionExpired = new Date() > new Date(booking.end_time);
-  const canCancel = (booking.status === 'active' || booking.status === 'reserved') && !isSessionExpired;
+
+  const canCancel = (booking.status === 'active' || booking.status === 'reserved') && !isSessionExpired && !booking.is_v2g;
 
   return (
     <View style={styles.container}>
@@ -265,6 +271,31 @@ export default function LiveSessionScreen() {
                 <View style={styles.divider} />
               </>
             )}
+            {booking.is_v2g && booking.discharge_start_time && (
+  <>
+    <View style={styles.infoRow}>
+      <Text style={styles.label}>V2G Discharge Window</Text>
+      <Text style={[styles.value, { color: '#3B82F6' }]}>
+        {new Date(booking.discharge_start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        {' - '}
+        {new Date(booking.discharge_end_time!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      </Text>
+    </View>
+    <View style={styles.divider} />
+
+    <View style={styles.infoRow}>
+      <Text style={styles.label}>V2G Energy Sold</Text>
+      <Text style={[styles.value, { color: '#10B981' }]}>+ ${booking.v2g_revenue?.toFixed(2)}</Text>
+    </View>
+    <View style={styles.divider} />
+    
+    <View style={styles.infoRow}>
+      <Text style={styles.label}>Net V2G Savings</Text>
+      <Text style={[styles.value, { color: '#10B981' }]}>${booking.v2g_profit?.toFixed(2)} saved</Text>
+    </View>
+    <View style={styles.divider} />
+  </>
+)}
 
             <View style={styles.infoRow}>
               <Text style={styles.label}>Reservation Window</Text>
@@ -288,12 +319,17 @@ export default function LiveSessionScreen() {
             <Text style={styles.actionButtonText}>Back to Home</Text>
           </TouchableOpacity>
 
-          {canCancel && (
-            <TouchableOpacity style={styles.cancelButton} onPress={handleCancelBooking}>
-              <Ionicons name="close-circle-outline" size={18} color="#EF4444" />
-              <Text style={styles.cancelButtonText}>End & Cancel Session</Text>
-            </TouchableOpacity>
-          )}
+          {canCancel ? (
+    <TouchableOpacity style={styles.cancelButton} onPress={handleCancelBooking}>
+      <Ionicons name="close-circle-outline" size={18} color="#EF4444" />
+      <Text style={styles.cancelButtonText}>End & Cancel Session</Text>
+    </TouchableOpacity>
+  ) : booking.is_v2g ? (
+    <View style={[styles.cancelButton, { backgroundColor: '#F3F4F6', opacity: 0.7 }]}>
+      <Ionicons name="lock-closed" size={18} color="#9CA3AF" />
+      <Text style={[styles.cancelButtonText, { color: '#9CA3AF' }]}>Locked: V2G Cycle Active</Text>
+    </View>
+  ) : null}
         </SafeAreaView>
       </View>
 

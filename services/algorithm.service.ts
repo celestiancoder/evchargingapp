@@ -12,6 +12,12 @@ export interface BookingResult {
   isPartial?: boolean;
   chargingMinutesNeeded?: number;
   serviceType: 'charging' | 'parking';
+  isV2G?: boolean;
+  dischargeStartTime?: string;
+  dischargeEndTime?: string;
+  v2gRevenue?: number;
+  v2gProfit?: number;
+  extraV2GMinutes?: number;
 }
 
 export const chargingAlgorithm = {
@@ -116,9 +122,8 @@ export const chargingAlgorithm = {
     for (let i = arrivalMin; i < departureMin; i++) {
       if (i >= bestStartMin && i < bestEndMin) {
         finalChargingCost += chargingMinutePrices[i];
-      } else {
-        finalIdleParkingCost += parkingMinutePrices[i];
-      }
+      } 
+      finalIdleParkingCost += parkingMinutePrices[i];
     }
 
     const totalCombinedCost = finalChargingCost + finalIdleParkingCost;
@@ -176,9 +181,8 @@ export const chargingAlgorithm = {
   for (let m = startMin; m < cancelMin; m++) {
     if (serviceType === 'charging' && m >= chargeStartMin && m < chargeEndMin) {
       finalChargingCost += chargingPrices[m];
-    } else {
-      finalParkingCost += parkingPrices[m];
-    }
+    } 
+    finalParkingCost += parkingPrices[m];
   }
 
   const finalTotalCost = Number((finalChargingCost + finalParkingCost).toFixed(2));
@@ -192,5 +196,100 @@ export const chargingAlgorithm = {
     finalTotalCost,
     refundAmount,
   };
+},
+calculateV2GChargeAndPark(
+  arrivalTime: string, 
+  departureTime: string, 
+  currentSoc: number, 
+  targetSoc: number,
+  maxOutputAmps: number = 2.5,
+  batteryCapacityMah: number = 2200,
+  enableV2G: boolean = true 
+): BookingResult {
+
+  const standardPlan = this.calculateChargeAndPark(
+    arrivalTime, departureTime, currentSoc, targetSoc, maxOutputAmps, batteryCapacityMah
+  );
+
+  if (!enableV2G || standardPlan.isPartial) {
+    return standardPlan;
+  }
+
+  const arrivalMin = this.timeToMinutes(arrivalTime);
+  const departureMin = this.timeToMinutes(departureTime);
+  const availableParkTime = departureMin - arrivalMin;
+  const M = standardPlan.chargingMinutesNeeded || 0; 
+  
+  const CHARGER_SPEED_MAH_PER_HOUR = maxOutputAmps * 1000;
+  const maxExtraSoc = 100 - targetSoc;
+  const maxExtraMah = (maxExtraSoc / 100) * batteryCapacityMah;
+  const maxExtraMinsByBattery = Math.floor((maxExtraMah / CHARGER_SPEED_MAH_PER_HOUR) * 60);
+  
+  const maxExtraMinsByTime = Math.floor((availableParkTime - M) / 2);
+  const xMax = Math.min(maxExtraMinsByBattery, maxExtraMinsByTime);
+
+  if (xMax <= 0) return standardPlan; 
+
+  const chargingPrices = this.getMinuteByMinutePrices(DAILY_PRICING_GRID);
+  const parkingPrices = this.getMinuteByMinutePrices(DAILY_PARKING_GRID);
+
+  let totalParkingCost = 0;
+  for (let k = arrivalMin; k < departureMin; k++) {
+    totalParkingCost += parkingPrices[k];
+  }
+
+  const chargePrefix = new Array(1441).fill(0);
+  for (let i = 0; i < 1440; i++) {
+    chargePrefix[i + 1] = chargePrefix[i] + chargingPrices[i];
+  }
+
+  const getRangeCost = (start: number, end: number): number => chargePrefix[end] - chargePrefix[start];
+
+  let bestV2GPlan: BookingResult | null = null;
+  let lowestNetCost = standardPlan.totalCost;
+
+  for (let x = 1; x <= xMax; x++) {
+    const chargeDuration = M + x;
+    const dischargeDuration = x;
+
+    for (let chargeStart = arrivalMin; chargeStart <= departureMin - chargeDuration; chargeStart++) {
+      const chargeEnd = chargeStart + chargeDuration;
+      const currentChargeCost = getRangeCost(chargeStart, chargeEnd);
+
+      const minDischargeStart = chargeEnd;
+      
+      for (let dischargeStart = minDischargeStart; dischargeStart <= departureMin - dischargeDuration; dischargeStart++) {
+        const dischargeEnd = dischargeStart + dischargeDuration;
+        const currentDischargeRevenue = getRangeCost(dischargeStart, dischargeEnd);
+
+        const netCost = (currentChargeCost - currentDischargeRevenue) + totalParkingCost;
+
+        if (netCost < lowestNetCost) {
+          lowestNetCost = netCost;
+          bestV2GPlan = {
+            serviceType: 'charging',
+            startTime: arrivalTime,
+            endTime: departureTime,
+            chargeStartTime: this.minutesToTime(chargeStart),
+            chargeEndTime: this.minutesToTime(chargeEnd),
+            dischargeStartTime: this.minutesToTime(dischargeStart),
+            dischargeEndTime: this.minutesToTime(dischargeEnd),
+            chargingCost: Number(currentChargeCost.toFixed(2)),
+            parkingCost: Number(totalParkingCost.toFixed(2)),
+            totalCost: Number(netCost.toFixed(2)),
+            achievedSoc: targetSoc,
+            isPartial: false,
+            chargingMinutesNeeded: chargeDuration,
+            isV2G: true,
+            v2gRevenue: Number(currentDischargeRevenue.toFixed(2)),
+            v2gProfit: Number((standardPlan.totalCost - netCost).toFixed(2)),
+            extraV2GMinutes: x
+          };
+        }
+      }
+    }
+  }
+
+  return bestV2GPlan ? bestV2GPlan : standardPlan;
 }
 };

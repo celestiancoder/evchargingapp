@@ -9,7 +9,8 @@ import {
   Platform,
   Modal,
   Alert,
-  ActivityIndicator
+  ActivityIndicator,
+  Switch 
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -47,6 +48,8 @@ export default function BookingFormScreen() {
   const [currentSoc, setCurrentSoc] = useState('10');
   const [targetSoc, setTargetSoc] = useState('80');
   const [newBatteryCapacity, setNewBatteryCapacity] = useState('2200');
+
+  const [enableV2G, setEnableV2G] = useState(false);
 
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [newMakeModel, setNewMakeModel] = useState('');
@@ -165,7 +168,8 @@ export default function BookingFormScreen() {
         arrivalTime,
         departureTime,
         currentSoc,
-        targetSoc
+        targetSoc,
+        enableV2G: (isCharging && enableV2G).toString()
       }
     });
   };
@@ -313,9 +317,26 @@ export default function BookingFormScreen() {
                   />
                 </View>
               </View>
-              <Text className="text-xs text-gray-400 mb-8">
+              <Text className="text-xs text-gray-400 mb-6">
                 We'll estimate charging time based on this range
               </Text>
+
+              <View className="mb-8 bg-blue-50/60 border border-blue-200 rounded-2xl p-4 flex-row items-center justify-between">
+                <View className="flex-1 mr-3">
+                  <View className="flex-row items-center mb-1">
+                    <Text className="font-bold text-gray-900 text-base">Enable V2G Optimization</Text>
+                  </View>
+                  <Text className="text-xs text-gray-500 leading-4">
+                    Allows your EV to sell power back during peak hours to cut your total cost.
+                  </Text>
+                </View>
+                <Switch
+                  value={enableV2G}
+                  onValueChange={setEnableV2G}
+                  trackColor={{ false: '#d1d5db', true: '#3b82f6' }}
+                  thumbColor={enableV2G ? '#ffffff' : '#f4f3f4'}
+                />
+              </View>
             </View>
           )}
 
@@ -348,7 +369,6 @@ export default function BookingFormScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} className="mb-6">
-              {/* EV Model Presets */}
               <Text className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2.5">
                 Select EV Preset
               </Text>

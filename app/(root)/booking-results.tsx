@@ -32,16 +32,38 @@ export default function BookingResultsScreen() {
   const vehicleId = params.vehicleId as string;
   const batteryCapacity = Number(params.batteryCapacityMah || 2200);
   const selectedBayAmps = Number(params.selectedBayAmps || 2.5);
+  
+  const enableV2G = String(params.enableV2G).toLowerCase() === 'true';
+
+  const runAlgorithm = (bayAmps: number) => {
+    if (serviceType === 'charging') {
+      if (enableV2G && chargingAlgorithm.calculateV2GChargeAndPark) {
+        return chargingAlgorithm.calculateV2GChargeAndPark(
+          arrivalTime,
+          departureTime,
+          Number(currentSoc),
+          Number(targetSoc),
+          bayAmps,
+          batteryCapacity,
+          enableV2G
+        );
+      }
+      return chargingAlgorithm.calculateChargeAndPark(
+        arrivalTime, 
+        departureTime, 
+        Number(currentSoc), 
+        Number(targetSoc), 
+        bayAmps, 
+        batteryCapacity
+      );
+    }
+    return chargingAlgorithm.calculateParkingOnly(arrivalTime, departureTime);
+  };
 
   useEffect(() => {
     if (!arrivalTime || !departureTime) return;
 
-    let calcResult: BookingResult;
-    if (serviceType === 'charging') {
-      calcResult = chargingAlgorithm.calculateChargeAndPark(arrivalTime, departureTime, Number(currentSoc), Number(targetSoc),selectedBayAmps,batteryCapacity);
-    } else {
-      calcResult = chargingAlgorithm.calculateParkingOnly(arrivalTime, departureTime);
-    }
+    const calcResult = runAlgorithm(selectedBayAmps);
     setResult(calcResult);
 
     const fetchBays = async () => {
@@ -69,26 +91,13 @@ export default function BookingResultsScreen() {
     };
 
     fetchBays();
-  }, [serviceType, stationId, arrivalTime, departureTime, currentSoc, targetSoc]);
+  }, [serviceType, stationId, arrivalTime, departureTime, currentSoc, targetSoc, enableV2G]);
 
-const handleBaySelect = (bay: BayStatus) => {
-  setSelectedSlotId(bay.id);
-
-  let calcResult: BookingResult;
-  if (serviceType === 'charging') {
-    calcResult = chargingAlgorithm.calculateChargeAndPark(
-      arrivalTime, 
-      departureTime, 
-      Number(currentSoc), 
-      Number(targetSoc),
-      bay.maxOutputAmps,
-      batteryCapacity,
-    );
-  } else {
-    calcResult = chargingAlgorithm.calculateParkingOnly(arrivalTime, departureTime);
-  }
-  setResult(calcResult);
-};
+  const handleBaySelect = (bay: BayStatus) => {
+    setSelectedSlotId(bay.id);
+    const calcResult = runAlgorithm(bay.maxOutputAmps);
+    setResult(calcResult);
+  };
 
   const handleConfirm = async () => {
     if (!result || !selectedSlotId) {
@@ -104,17 +113,25 @@ const handleBaySelect = (bay: BayStatus) => {
 
       const chargeStartIso = result.chargeStartTime ? convertToIsoDate(result.chargeStartTime) : null; 
       const chargeEndIso = result.chargeEndTime ? convertToIsoDate(result.chargeEndTime) : null;
+      
+      const dischargeStartIso = result.dischargeStartTime ? convertToIsoDate(result.dischargeStartTime) : null;
+      const dischargeEndIso = result.dischargeEndTime ? convertToIsoDate(result.dischargeEndTime) : null;
 
-      const createdBooking=await bookingService.createBooking({
+      const createdBooking = await bookingService.createBooking({
         vehicleId: vehicleId,
         serviceType: serviceType,
         startTime: overallStartIso,
         endTime: overallEndIso,
         chargeStartTime: chargeStartIso,
         chargeEndTime: chargeEndIso,
+        dischargeStartTime: dischargeStartIso,
+        dischargeEndTime: dischargeEndIso,
         slotId: selectedSlotId, 
         targetSoc: result.serviceType === 'charging' ? Number(targetSoc) : undefined,
         totalCost: result.totalCost,
+        enableV2G: enableV2G,
+        v2gRevenue: result.v2gRevenue,
+        v2gProfit: result.v2gProfit || 0,
       });
 
       Alert.alert(
@@ -141,7 +158,7 @@ const handleBaySelect = (bay: BayStatus) => {
           <Ionicons name="arrow-back" size={24} color={isSubmitting ? "#9CA3AF" : "#374151"} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
-          {result?.serviceType === 'charging' ? 'Optimal Charging Slot' : 'Parking Reservation'}
+          {result?.serviceType === 'charging' ? (enableV2G ? 'V2G Smart Slot' : 'Optimal Charging Slot') : 'Parking Reservation'}
         </Text>
         <View style={{ width: 24 }} />
       </View>
@@ -151,12 +168,12 @@ const handleBaySelect = (bay: BayStatus) => {
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <Ionicons 
-                name={result.serviceType === 'charging' ? "flash" : "car"} 
+                name={enableV2G ? "swap-vertical" : (result.serviceType === 'charging' ? "flash" : "car")} 
                 size={24} 
-                color={result.serviceType === 'charging' ? "#F59E0B" : "#2563EB"} 
+                color={enableV2G ? "#059669" : (result.serviceType === 'charging' ? "#F59E0B" : "#2563EB")} 
               />
               <Text style={styles.cardTitle}>
-                {result.serviceType === 'charging' ? 'Smart Optimized Pick' : 'Standard Parking'}
+                {enableV2G ? 'V2G Smart Optimized' : (result.serviceType === 'charging' ? 'Smart Optimized Pick' : 'Standard Parking')}
               </Text>
             </View>
 
@@ -180,6 +197,15 @@ const handleBaySelect = (bay: BayStatus) => {
                   <Text style={styles.label}>Active Charge Window:</Text>
                   <Text style={styles.valueHighlight}>{result.chargeStartTime} - {result.chargeEndTime}</Text>
                 </View>
+
+                {enableV2G && result.dischargeStartTime && (
+                  <View style={styles.row}>
+                    <Text style={styles.label}>V2G Feed-In Window:</Text>
+                    <Text style={[styles.valueHighlight, { color: '#059669' }]}>
+                      {result.dischargeStartTime} - {result.dischargeEndTime}
+                    </Text>
+                  </View>
+                )}
 
                 <View style={styles.row}>
                   <Text style={styles.label}>Target SOC Achieved:</Text>
@@ -233,6 +259,17 @@ const handleBaySelect = (bay: BayStatus) => {
                 <View style={styles.receiptRow}>
                   <Text style={styles.receiptLabel}>Smart Charging ({result.chargingMinutesNeeded} mins)</Text>
                   <Text style={styles.receiptValue}>${result.chargingCost.toFixed(2)}</Text>
+                </View>
+              )}
+
+              {enableV2G && (result.v2gProfit || 0) > 0 && (
+                <View style={styles.receiptRow}>
+                  <Text style={[styles.receiptLabel, { color: '#059669', fontWeight: '600' }]}>
+                    V2G Grid Revenue Credit
+                  </Text>
+                  <Text style={{ color: '#059669', fontWeight: '700' }}>
+                    -${(result.v2gProfit || 0).toFixed(2)}
+                  </Text>
                 </View>
               )}
               
