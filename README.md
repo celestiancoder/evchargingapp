@@ -380,44 +380,15 @@ This is why the UI can warn:
 
 The booking has a fixed arrival and departure window, but charging can happen anywhere inside it.
 
-The algorithm compares two per-minute price arrays:
+The current app uses a full-stay parking model.
 
-- charging price
-- parking price
+That means:
 
-Then it computes a delta array:
+- parking is charged for the entire reservation window
+- charging cost is optimized separately
+- the optimizer chooses the charging window with the lowest charging cost inside the stay
 
-- delta = charging price - parking price
-
-This tells the algorithm how much extra cost each minute of charging adds compared with just parking.
-
-Why do this?
-
-Because the stay always has some base parking cost, and the charging part adds extra cost. The algorithm wants to place the charging block where that extra cost is smallest.
-
-The intuition is easy to see with a small example.
-
-Suppose we have a 5-minute stay and the parking cost for each minute is different: 1 dollar, 2 dollars, 3 dollars, 4 dollars, and 5 dollars. If we replaced one of those minutes with charging that costs 6 dollars, we would choose to replace the 5-dollar minute, because that gives the smallest increase in cost. In delta form, that is `charging cost - parking cost`, so the smallest delta is `6 - 5 = 1`.
-
-Now take another 5-minute range where the parking prices go the other way:
-
-- Minute 1: 5 dollars
-- Minute 2: 4 dollars
-- Minute 3: 3 dollars
-- Minute 4: 2 dollars
-- Minute 5: 1 dollar
-
-If the charging prices for those same minutes are 1, 2, 3, 4, and 5 dollars, then the deltas are:
-
-- Minute 1: `1 - 5 = -4`
-- Minute 2: `2 - 4 = -2`
-- Minute 3: `3 - 3 = 0`
-- Minute 4: `4 - 2 = 2`
-- Minute 5: `5 - 1 = 4`
-
-So the best minute to charge would be minute 1, because it gives the smallest delta.
-
-The same idea scales to a fixed-size window: instead of picking one minute, the algorithm chooses the window whose total delta is smallest.
+In other words, the app does not subtract parking from charging during window selection anymore. Parking is still calculated for every minute between arrival and departure, and charging is placed in the cheapest available window.
 
 #### Step 4: Sliding window search
 
@@ -428,9 +399,9 @@ The algorithm then slides a window across the stay:
 - start at arrival time
 - move minute by minute until the latest valid position
 
-For each possible start position, it calculates the sum of delta prices inside that window.
+For each possible start position, it calculates the total charging cost inside that window.
 
-The window with the smallest delta sum is chosen as the best charging period.
+The window with the smallest charging cost is chosen as the best charging period.
 
 The first window is computed once.
 
@@ -461,6 +432,33 @@ It also returns:
 - `achievedSoc`
 - whether the plan is partial
 - how many charging minutes were needed
+
+### 5. V2G Optimization
+
+When V2G is enabled, the app extends the charging plan with one extra idea:
+
+- charge a little longer
+- discharge later inside the same booking window
+
+The V2G optimizer keeps the same full-stay parking cost rule.
+
+It then searches for the cheapest combination of:
+
+- charging cost for the charge window
+- revenue from the discharge window
+- full parking cost for the entire stay
+
+The goal is to find a plan where the discharge revenue lowers the total cost more than the extra charging increases it.
+
+The V2G result stores:
+
+- `chargeStartTime` and `chargeEndTime`
+- `dischargeStartTime` and `dischargeEndTime`
+- `v2gRevenue`
+- `v2gProfit`
+- `totalCost` as the final net cost
+
+If V2G does not improve the price, the app falls back to the standard charging plan.
 
 ## Early Cancellation Algorithm
 
