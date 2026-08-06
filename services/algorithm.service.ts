@@ -96,35 +96,66 @@ export const chargingAlgorithm = {
     const chargingMinutePrices = this.getMinuteByMinutePrices(DAILY_PRICING_GRID);
     const parkingMinutePrices = this.getMinuteByMinutePrices(DAILY_PARKING_GRID);
 
-    const deltaMinutePrices = chargingMinutePrices.map((chargePrice, idx) => chargePrice - parkingMinutePrices[idx]);
-
-    let currentWindowDeltaSum = 0;
-    for (let i = arrivalMin; i < arrivalMin + minutesNeeded; i++) {
-      currentWindowDeltaSum += deltaMinutePrices[i];
+    // const deltaMinutePrices = chargingMinutePrices.map((chargePrice, idx) => chargePrice - parkingMinutePrices[idx]);
+    const chargePrefix = new Array(1441).fill(0);
+    for (let i = 0; i < 1440; i++) {
+      chargePrefix[i + 1] = chargePrefix[i] + chargingMinutePrices[i];
     }
-    
-    let minDeltaCost = currentWindowDeltaSum;
-    let bestStartMin = arrivalMin;
 
-    for (let i = arrivalMin + 1; i <= departureMin - minutesNeeded; i++) {
-      currentWindowDeltaSum = currentWindowDeltaSum - deltaMinutePrices[i - 1] + deltaMinutePrices[i + minutesNeeded - 1];
-      if (currentWindowDeltaSum < minDeltaCost) {
-        minDeltaCost = currentWindowDeltaSum;
-        bestStartMin = i;
+    const getChargeRangeCost = (start: number, end: number): number =>{
+      return chargePrefix[end] - chargePrefix[start];
+    }
+       
+    let bestStartMin = arrivalMin;
+    let lowestChargeCost = Number.POSITIVE_INFINITY;
+
+    for (let start = arrivalMin; start <= departureMin - minutesNeeded; start++) {
+      const end = start + minutesNeeded;
+      const chargeCost = getChargeRangeCost(start, end);
+
+      if (chargeCost < lowestChargeCost) {
+        lowestChargeCost = chargeCost;
+        bestStartMin = start;
       }
     }
 
+    // let currentWindowDeltaSum = 0;
+    // for (let i = arrivalMin; i < arrivalMin + minutesNeeded; i++) {
+    //   currentWindowDeltaSum += deltaMinutePrices[i];
+    // }
+    
+    // let minDeltaCost = currentWindowDeltaSum;
+    // let bestStartMin = arrivalMin;
+
+    // for (let i = arrivalMin + 1; i <= departureMin - minutesNeeded; i++) {
+    //   currentWindowDeltaSum = currentWindowDeltaSum - deltaMinutePrices[i - 1] + deltaMinutePrices[i + minutesNeeded - 1];
+    //   if (currentWindowDeltaSum < minDeltaCost) {
+    //     minDeltaCost = currentWindowDeltaSum;
+    //     bestStartMin = i;
+    //   }
+    // }
+
     const bestEndMin = bestStartMin + minutesNeeded;
 
-    let finalChargingCost = 0;
-    let finalIdleParkingCost = 0;
+    // let finalChargingCost = 0;
+    // let finalIdleParkingCost = 0;
 
+    let finalChargingCost = 0;
+    for (let i = bestStartMin; i < bestEndMin; i++) {
+      finalChargingCost += chargingMinutePrices[i];
+    }
+
+    let finalIdleParkingCost = 0;
     for (let i = arrivalMin; i < departureMin; i++) {
-      if (i >= bestStartMin && i < bestEndMin) {
-        finalChargingCost += chargingMinutePrices[i];
-      } 
       finalIdleParkingCost += parkingMinutePrices[i];
     }
+
+    // for (let i = arrivalMin; i < departureMin; i++) {
+    //   if (i >= bestStartMin && i < bestEndMin) {
+    //     finalChargingCost += chargingMinutePrices[i];
+    //   } 
+    //   finalIdleParkingCost += parkingMinutePrices[i];
+    // }
 
     const totalCombinedCost = finalChargingCost + finalIdleParkingCost;
 
